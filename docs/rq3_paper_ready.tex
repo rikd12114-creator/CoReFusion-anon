@@ -1,0 +1,276 @@
+% =====================================================================
+%  RQ3 v2 — PAPER-READY CONTENT (real numbers, DiffuCoder-7B-Base)
+%  Universe: 230 RefineID snippets / 1055 [MASK] sites / 196 names / 64 packages.
+%  Figures already rendered to figures/new/rq3/:
+%     fig_rq3_exp1_depth_probe.pdf   fig_rq3_exp2_dcl.pdf   fig_rq3_regime_inversion.pdf
+%  Copy each block into the corresponding place in the thesis. All numbers below
+%  are taken verbatim from results/rq3_probe/exp{1,2}_curves.json.
+% =====================================================================
+
+
+% ---------------------------------------------------------------------
+% (A) ABSTRACT — replace the current RQ3 sentence with this
+% ---------------------------------------------------------------------
+% OLD: "Probing the internal states of DiffuCoder-7B shows why: the signal that
+% tells a bad name from a good one appears only in the last few layers and the
+% last few denoising steps, after the unmasking schedule has already confirmed
+% most of its predictions."
+%
+% NEW:
+A linear probe on DiffuCoder-7B-Base shows why. Whether an identifier fits its
+surrounding code is linearly decodable from the residual stream, but the
+genuinely contextual component of that signal (intact minus scrambled-context
+decodability) is near zero through the first two-thirds of the network and rises
+only in the final layers, reaching an AUC of $0.26$ at the output. During
+generation the model carries no early readable signal of whether its own fill
+will be correct: commitment concentrates in the final third of the denoising
+schedule, while a probe for the model's eventual success stays near chance
+(peak ROC $0.63$) up to that point. The discriminative information therefore
+exists but emerges too late, and is not available as an actionable signal before
+the schedule commits, which is why providing the rename positions as masks
+bypasses the problem and dLLMs work as filling engines but not standalone agents.
+
+
+% ---------------------------------------------------------------------
+% (B) THE RQ3 SECTION  (replaces the old four-probe Section VI)
+% ---------------------------------------------------------------------
+\section{RQ3: What the Model Represents About Name Fit}
+\label{sec:rq3}
+RQ1 and RQ2 characterized DiffuCoder from the outside, by what it produces at
+masked positions. A model that recovers the developer's exact identifier a third
+of the time must compute something internally that separates the names it keeps
+from the names it would replace. We probe that internal state on $n=230$ RefineID
+snippets ($1055$ sites, $196$ distinct names, $64$ source packages), using
+DiffuCoder-7B-Base because its inference path exposes per-layer hidden states and
+the unmasking schedule through a stable interface.
+
+\subsection{Name fit is linearly decodable, contextually, and only in deep layers}
+\label{sec:rq3-depth}
+For each snippet we clamp the target identifier to the developer's name (the
+\emph{good} condition) or to a length- and sub-word-count--matched
+\emph{misplaced} real identifier drawn from a different snippet (the \emph{bad}
+condition), holding the surrounding code byte-identical between the two. This
+replaces the trivial ``real word versus short throw-away token'' contrast---which
+a probe solves at $\mathrm{AUC}=1.0$ by reading token length alone
+(Appendix~\ref{app:rq3})---with ``the right name versus an equally-shaped wrong
+name in this context.'' We read the residual stream at the target position across
+all $29$ layers and train an $\ell_2$ logistic probe at each layer, evaluated
+under leave-one-package-out cross-validation with snippet-cluster bootstrap
+confidence intervals. The headline is the \emph{contextual} decodability,
+$\mathrm{AUC}_{\text{ctx}}(\ell)=\mathrm{AUC}_{\text{intact}}(\ell)-
+\mathrm{AUC}_{\text{scrambled}}(\ell)$, where the scrambled control clamps the
+same tokens but shuffles the surrounding code; any token-intrinsic signal
+survives scrambling and cancels, leaving only what depends on the intact context.
+
+Raw decodability is high but largely token-intrinsic: with intact context the
+probe separates good from misplaced names at $\mathrm{AUC}=0.956$
+($95\%\,\mathrm{CI}\,[0.939,0.972]$) at the output layer, yet the scrambled
+control still reaches $0.693$, because the developer's name shares lexical
+material with its own snippet. The contextual difference is therefore $0.263$,
+and---unlike the raw curve, which plateaus near $0.99$ by the middle of the
+stack---it is flat at $\approx0.10$ through the first two-thirds of the network
+(early-third mean $0.103$) and climbs monotonically over the final third
+(late-third mean $0.186$) to its peak of $0.263$ at the output
+(Fig.~\ref{fig:rq3-exp1}a). The scrambled curve \emph{falls} from $0.87$
+mid-stack to $0.69$ at the output over the same range, i.e.\ deep layers
+increasingly depend on the actual surrounding structure rather than the token
+alone. The signal is not an artifact: the sub-word-count baseline is exactly
+$0.500$, the random-label control task is $0.534$ (selectivity $0.422$), the
+layer-0 embedding is $0.301$, and grouping by snippet rather than by package
+inflates the AUC by only $0.006$, bounding codebase leakage
+(Table~\ref{tab:rq3-exp1}). The probe's decision axis cleanly separates the two
+classes at the output layer (Fig.~\ref{fig:rq3-exp1}b).
+
+\paragraph{Cross-model replication}
+The same depth profile holds on DreamCoder-7B, a second masked-diffusion code
+model: the contextual signal is flat at $\approx0.11$ through the first two-thirds
+and rises to $0.297$ at the output, tracking the DiffuCoder-7B-Base curve almost
+exactly (Fig.~\ref{fig:rq3-compare}), with every control passing (intact $0.978$,
+scrambled $0.681$, sub-word-count baseline $0.500$, selectivity $0.511$, leakage
+gap $0.006$). The late-emerging, deep-layer name-fit representation is therefore a
+property of masked discrete diffusion rather than a single checkpoint.
+
+\subsection{During generation, success is not decodable before commitment}
+\label{sec:rq3-time}
+The depth analysis shows where the fit signal lives; the schedule analysis asks
+whether it arrives in time to act. We run normal generation (target masked,
+filled over the $32$-step denoising schedule, EM rate $0.367$) and, at each step,
+train a probe to predict whether the model's \emph{own} final fill will be exact,
+evaluated only on positions still masked at that step so the already-committed
+token cannot leak into the representation. We overlay this detection curve with
+the commitment CDF (first step at confidence $\geq0.8$).
+
+Commitment concentrates in the final third of the schedule: $25\%$ of positions
+are committed by step $21$, $50\%$ by step $26$, and $75\%$ by step $29$. The
+detection probe, however, stays near chance throughout: ROC rises from
+$\approx0.50$ only to a peak of $0.63$ at step $22$ and never reaches $0.70$,
+and PR-AUC sits at the $0.367$ base rate (Fig.~\ref{fig:rq3-exp2}). The result is
+robust to the strictness of the success label: grading success by the CoReFusion
+Identifier Score---which credits canvas-duplicated fills such as
+\texttt{request}$\rightarrow$\texttt{requestRequest}---lifts the detection peak
+only from $0.63$ to $0.67$ and leaves it at the same step ($22$, with $31\%$ of
+positions already locked), so the absence of an early success signal is not an
+artifact of exact match. The model therefore commits fills without an early,
+internally-readable signal of whether they are correct.
+
+\subsection{Why rare names are hardest}
+\label{sec:rq3-regime}
+Stratifying target positions by the rank of the ground-truth name in the output
+distribution explains where the late signal fails to matter. In the
+\textsc{HighConfident} regime the developer's name sits at median rank $77$ and an
+injected smell at $492$; in \textsc{Uncertain} the gap narrows ($524$ vs $676$);
+in \textsc{RareConfident} the ordering \emph{inverts}---the generic smell sits at
+median rank $733$ while the developer's project-specific name sits at $10{,}989$
+(Fig.~\ref{fig:rq3-regime}). These rare, project-specific identifiers are exactly
+the ones a late-arriving, weak fit signal cannot rescue, linking RQ3 back to the
+RQ2 failure mode. (The context-sensitivity analysis $\Delta H$ is in
+Appendix~\ref{app:rq3}.)
+
+
+% ---------------------------------------------------------------------
+% (C) FIGURES
+% ---------------------------------------------------------------------
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/new/rq3/fig_rq3_exp1_depth_probe.pdf}
+  \caption{RQ3 Exp1. (a) Contextual name-fit decodability
+  $\mathrm{AUC}_{\text{intact}}-\mathrm{AUC}_{\text{scrambled}}$ versus
+  transformer layer (leave-one-package-out CV, snippet-cluster bootstrap band),
+  with the intact, scrambled, length, and random-label-control references; the
+  contextual signal is flat through the first two-thirds and rises in the final
+  third (shaded) to $0.26$. (b) Out-of-fold projection of the layer-28 probe,
+  developer name versus length-matched misplaced name (AUC $0.96$); this replaces
+  the unsupervised UMAP view with the probe's own decision axis. $n=230$ snippets
+  / $1055$ sites / $64$ packages, DiffuCoder-7B-Base.}
+  \label{fig:rq3-exp1}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/new/rq3/fig_rq3_exp2_dcl.pdf}
+  \caption{RQ3 Exp2. Per-step detection ROC and PR-AUC for ``will the model's own
+  fill be exact,'' evaluated on still-masked positions, overlaid with the
+  commitment CDF. Commitment completes in the final third (median step $26$),
+  while detection never clears ROC $0.70$ (peak $0.63$ at step $22$) and PR-AUC
+  stays at the $0.37$ base rate: the success signal does not precede commitment.}
+  \label{fig:rq3-exp2}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.72\linewidth]{figures/new/rq3/fig_rq3_regime_inversion.pdf}
+  \caption{RQ3 output-distribution view. Median rank of the developer's name
+  versus an injected smell across confidence regimes; the ordering inverts in
+  \textsc{RareConfident}, where the model ranks a generic smell above the
+  developer's rare project-specific name.}
+  \label{fig:rq3-regime}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.8\linewidth]{figures/new/rq3/fig_rq3_compare_models.pdf}
+  \caption{RQ3 cross-model replication. Contextual name-fit decodability
+  ($\mathrm{AUC}_{\text{intact}}-\mathrm{AUC}_{\text{scrambled}}$) versus
+  normalized depth for DiffuCoder-7B-Base and DreamCoder-7B; both stay near zero
+  through the first two-thirds and rise in the final third (shaded), so the
+  deep-layer name-fit signal is shared across the masked-diffusion family.}
+  \label{fig:rq3-compare}
+\end{figure}
+
+
+% ---------------------------------------------------------------------
+% (D) RESULTS TABLE — Exp1 decodability and controls
+% ---------------------------------------------------------------------
+\begin{table}[t]
+  \centering
+  \caption{RQ3 Exp1: name-fit decodability and controls at the output layer
+  (DiffuCoder-7B-Base, leave-one-package-out CV, $230$ snippets / $64$ packages).}
+  \label{tab:rq3-exp1}
+  \begin{tabular}{lc}
+    \toprule
+    Quantity & ROC-AUC \\
+    \midrule
+    Intact context (good vs.\ misplaced) & $0.956\;[0.939,0.972]$ \\
+    Scrambled context (token-intrinsic floor) & $0.693$ \\
+    \textbf{Contextual (intact $-$ scrambled)} & $\mathbf{0.263}$ \\
+    \midrule
+    Sub-word-count-only baseline & $0.500$ \\
+    Random-label control task & $0.534$ \\
+    Layer-0 embedding baseline & $0.301$ \\
+    Leakage gap (snippet $-$ package CV) & $0.006$ \\
+    Throw-away smell vocab (length-shortcut ceiling) & $1.000$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+% ---------------------------------------------------------------------
+% (E) METHODOLOGY ADDITION  (put in the Methodology chapter, RQ3 protocol)
+% ---------------------------------------------------------------------
+% \subsubsection{RQ3 internal-state protocol}
+We probe DiffuCoder-7B-Base on the $230$-snippet, $1024$-token-filtered RefineID
+split. \emph{Depth probe.} For each snippet we form a good/bad pair that differs
+only at the target identifier: the good condition clamps the developer's name,
+the bad condition a misplaced real identifier from another snippet matched on
+sub-word count (char-length bucket as fallback), so length, frequency and
+foreignness are controlled by construction. We read the residual stream at the
+target's first sub-token for layers $0$--$28$ and fit an $\ell_2$ logistic probe
+per layer. We report $\mathrm{AUC}_{\text{intact}}-\mathrm{AUC}_{\text{scrambled}}$
+(scrambled = same tokens, permuted context) so token-intrinsic separability
+cancels, against a sub-word-count baseline, a layer-0 embedding baseline, and a
+Hewitt--Liang random-label control task. Generalization uses leave-one-package-out
+GroupKFold over the $64$ packages (the gap to snippet-level grouping is reported
+as the leakage estimate), and all confidence intervals are snippet-cluster
+bootstraps. \emph{Schedule probe.} In normal generation we capture, per denoising
+step, the hidden state at each target position and whether it is still masked, and
+train a per-step probe (on still-masked positions only) for whether the model's
+own final fill is exact, overlaid with the commitment CDF (first step at
+confidence $\geq0.8$).
+
+
+% ---------------------------------------------------------------------
+% (F) CONCLUSION — replace the RQ3 sentence in Section IX
+% ---------------------------------------------------------------------
+Inside DiffuCoder-7B-Base, a linear probe shows that whether an identifier fits
+its context is decodable from the residual stream---the genuinely contextual
+component (intact minus scrambled-context) reaches AUC $0.26$ and emerges only in
+the final third of the layers, above length, embedding, and control-task
+baselines and robust to held-out packages---yet during generation the model
+carries no early readable signal of its own success: commitment concentrates in
+the final third of the denoising schedule while a success probe stays near chance
+(peak ROC $0.63$) until then (RQ3). The discriminative information exists but
+arrives too late to act on, which is why dLLMs are effective multi-site filling
+engines when rename positions are given but not standalone refactoring agents.
+
+
+% ---------------------------------------------------------------------
+% (G) THREATS TO VALIDITY  (additions / replacements for the RQ3 items)
+% ---------------------------------------------------------------------
+% Internal: The RQ3 bad class is necessarily synthetic, since RefineID contains
+% no natural pre-rename names; we mitigate the obvious-token confound by matching
+% the bad name on sub-word count and by reporting the contextual double difference
+% rather than raw AUC. The fixed $k{=}2$ generation canvas can duplicate short
+% identifiers (e.g.\ "request" -> "requestRequest"), which depresses the Exp2 EM
+% label; we verified the near-chance detection result is robust to a graded
+% CIS-based success label (detection peak 0.63 -> 0.67, same late step 22).
+% External: the depth probe replicates on DreamCoder-7B (Fig. ref{fig:rq3-compare}),
+% so the deep-layer name-fit signal is not specific to DiffuCoder-7B-Base; the
+% internal-state findings still use two masked-diffusion code models on 230
+% snippets (64 packages), and other languages or generation configs may differ.
+% Conclusion: per-layer and per-step AUCs are many correlated tests; we report the
+% full curve with simultaneous bootstrap bands and a pre-registered late-vs-early-
+% third contrast rather than a single selected cell, and grouping is at the
+% package level with snippet-cluster bootstraps to avoid optimistic intervals.
+
+
+% ---------------------------------------------------------------------
+% (H) APPENDIX pointer
+% ---------------------------------------------------------------------
+% \section{RQ3 supplementary}\label{app:rq3}
+% - Per-layer intact / scrambled / contextual curves (full table from exp1_curves.json).
+% - Throw-away smell-vocab probe (AUC 1.000) demonstrating the length shortcut the
+%   matched-misplaced design removes.
+% - Context-sensitivity Delta H by regime (HighConfident 2.01, RareConfident 2.23,
+%   Uncertain 2.42; 0.41-bit spread).
+% - 3x3 t_detect x t_commit sensitivity surface (all censored: detection never
+%   clears the thresholds).

@@ -1,0 +1,188 @@
+% =============================================================================
+% RQ2 (deobfuscation) section — REWRITTEN against the latest 2026-06-12 runs.
+%
+% Provenance: every number below is produced by
+%   analysis/reproduce_rq2_deobfuscation.py
+% from the pinned 6/12 CSVs:
+%   DiffuCoder-7B_{all-masked,target-only}_20260612_102623.csv
+%   DreamCoder-7B_{all-masked,target-only}_20260612_102631.csv
+% and the RefineID targets in data/test.csv.
+%
+% WHAT CHANGED vs the V5 PDF (old -> new), all because data is now 6/12:
+%   Table V  all-masked : DiffuCoder 12.2 -> 12.4 ; DreamCoder 13.9 -> 13.5
+%   Table V  target-only: DiffuCoder  3.1 ->  2.8 ; DreamCoder  4.1 ->  4.7
+%   Table VI : row id=9 (bytes) prediction  b -> f   (the only changed row; 8/9 identical)
+%   Sec V-C  : 928 wrong -> 931 ; 96.9% -> 97.2% ; 662/71.3% -> 671/72.1% ;
+%              189/20.4% -> 189/20.3% ; empty 77/8.3% -> 71/7.6% ;
+%              example "parseInt" -> "randomGenerator" (parseInt no longer occurs; fConfig still does)
+%   Sec V-D  : "3–4%" -> "2.8–4.7%" ; "71.3%" -> "72.1%" ;
+%              "declines monotonically" -> corrected (the 1–10 bucket is BELOW the
+%              11–20 bucket for DiffuCoder in BOTH the old and new data, so the
+%              monotonic claim was never accurate — wording fixed here).
+%   RQ1 clean ctx. (31.1 / 33.2) UNCHANGED — it comes from the separate RQ1
+%              benchmark, not the deobfuscation runs.
+%   Section III-D2 (metric definitions) UNCHANGED — methodology only, no numbers.
+%   Abstract: "drops to about 3%" is still correct (target-only = 2.8% ≈ 3%); no
+%              numeric edit needed. (The phrase "find the positions on their own"
+%              is an abstract-wording matter, out of this RQ2 rewrite's scope.)
+%
+% Fig 8: regenerate from figures/new/fig8_rq2_em_june.{pdf,png}.
+%   8(b) all-masked mean per-sample EM (%) by #identifiers bucket [1-10,11-20,21-50,51-100,100+]:
+%     DiffuCoder-7B : 17.2  20.4  14.0   7.4   2.0
+%     DreamCoder-7B : 21.5  19.9  13.7   7.5   2.4
+% =============================================================================
+
+
+% ---------- Table V ----------------------------------------------------------
+\begin{table}[t]
+  \centering
+  \caption{Target-position Exact Match (\%) under RQ1 (clean context) and the
+           two RQ2 experiments. Both RQ2 columns report EM evaluated at the
+           \emph{same} \textsc{RefineID} target position, for direct
+           comparability with RQ1.}
+  \label{tab:rq2_em}
+  \small
+  \setlength{\tabcolsep}{6pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabular}{@{}lccc@{}}
+    \toprule
+                  & RQ1            & \multicolumn{2}{c}{RQ2 target-EM} \\
+    \cmidrule(l){3-4}
+    Model         & clean ctx.     & all-masked & target-only \\
+    \midrule
+    DiffuCoder-7B & 31.1           & 12.4       & 2.8 \\
+    DreamCoder-7B & 33.2           & 13.5       & 4.7 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+% ---------- Table VI ---------------------------------------------------------
+\begin{table}[t]
+  \centering
+  \caption{DiffuCoder-7B's wrong predictions under the target-only condition.
+           ``Obf.'' is the single-letter token assigned to the target during
+           obfuscation. Rows marked $\dagger$ are cases where the model's
+           prediction matches the obfuscated label of the target itself.}
+  \label{tab:rq2_examples}
+  \small
+  \setlength{\tabcolsep}{6pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabular}{@{}rlcc@{}}
+    \toprule
+    ID & Target & Obf. & Prediction \\
+    \midrule
+    0  & \texttt{decodedCapacity}   & ar & aq \\
+    2  & \texttt{expectedIndexName} & n  & r  \\
+    3  & \texttt{style}             & e  & e$^{\dagger}$ \\
+    6  & \texttt{status}            & r  & a  \\
+    9  & \texttt{bytes}             & j  & f  \\
+    11 & \texttt{context}           & c  & a  \\
+    12 & \texttt{cache}             & a  & a$^{\dagger}$ \\
+    13 & \texttt{relativePath}      & j  & j$^{\dagger}$ \\
+    15 & \texttt{printer}           & n  & p  \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+% ---------- Section V prose --------------------------------------------------
+\section{RQ2: Multi-Identifier Multi-Site Renaming}
+\label{sec:rq2}
+
+RQ1 showed that dLLMs can propagate a single renaming decision across many
+co-referring sites in one bidirectional forward pass, and that the advantage
+over FIM-AR baselines widens as the number of sites grows. The natural next
+question is whether the same advantage extends from one identifier to many: can
+a dLLM produce distinct names for several distinct identifiers in the same file
+simultaneously? \textsc{RefineID} does not ask this question directly, since
+each sample annotates exactly one identifier as the target. The experiment
+setup in Section~III-D2 lets us decompose the gap between RQ1 and the full
+multi-identifier multi-site task into two parts that can be measured separately.
+
+\subsection{All-masked Experiment}
+To probe renaming with multiple sites and multiple identifiers, we run the
+all-masked experiment described in Section~III-D2. Under this condition,
+DiffuCoder-7B reaches \textbf{12.4\%} target-EM and DreamCoder-7B reaches
+\textbf{13.5\%} (Table~\ref{tab:rq2_em}). Both numbers are well below their RQ1
+figures of 31.1\% and 33.2\%. Figure~8(b) reports how this number varies with
+the number of distinct identifiers in the smell set $S$: per-sample EM is
+highest for samples with only a handful of identifiers and falls off as $S$
+grows, dropping to about 2\% for the most crowded files. This contrasts with
+the RQ1 result on the same models (Figure~5), where the EM band of
+26.8\%--36.4\% held across single-identifier multi-site samples regardless of
+site count. The joint-resolution advantage is therefore robust to growth in the
+number of co-referring sites of one identifier, but degrades as the number of
+distinct identifier groups in $S$ grows.
+
+\subsection{Target-only Experiment}
+The second experiment keeps every identifier in place but rewrites each as a
+single-letter token ($a, b, c, \dots$), so the model sees concrete
+identifier-shaped tokens that carry no information about what those identifiers
+mean, and only the target is masked. Under this condition, EM falls to
+\textbf{2.8\%} (DiffuCoder-7B) and \textbf{4.7\%} (DreamCoder-7B)---9.6 and
+8.8 percentage points below the all-masked result on the same target positions,
+respectively. The two experiments differ only in whether the surrounding
+identifiers are absent (all-masked) or actively misleading (target-only), so the
+gap between them measures the cost of adversarial neighbours over and above the
+cost of absent neighbours.
+
+\subsection{Qualitative Analysis of Wrong Predictions}
+The roughly 28 percentage points lost between clean context and target-only
+leave the question of what DiffuCoder-7B actually produces in the 97.2\% of
+target-only samples it gets wrong. We therefore inspect the wrong predictions.
+Among the \textbf{931} wrong predictions, \textbf{671 (72.1\%)} are
+one-or-two-letter lowercase strings that share the lexical form of the
+obfuscated single-letter tokens that surround them. The remainder split between
+longer meaningful identifiers (189, 20.3\%, such as \texttt{randomGenerator} and
+\texttt{fConfig}) and empty strings from which no identifier can be extracted
+(71, 7.6\%). Nearly three-quarters of the failures are therefore not informed
+guesses that happen to disagree with the developer's choice---they are
+predictions in the wrong shape. The general renaming ability of the model fails
+in the target-only condition whenever there is surrounding obfuscation.
+
+In three of the nine rows ($\dagger$) the prediction coincides with the
+single-letter token the obfuscator had assigned to the target itself. This is a
+chance collision, not recovery: the mapping is one-to-one and the target's
+positions are all \texttt{<|mask|>}, so the assigned letter never appears in the
+input. The bias toward frequent single-letter tokens under an obfuscated context
+produces a small number of collisions with the alphabet. This bias is the
+qualitative companion of the second decomposition step: the model in the
+target-only condition follows the lexical style of the obfuscated context rather
+than the structural cues that survive obfuscation, so masking those tokens away
+(all-masked) removes the anchor and improves the result.
+
+\subsection{Analysis}
+The multi-site advantage observed in RQ1 was conditional on the model having
+semantically informative neighbours to attend to. When the neighbours carry the
+developer's chosen names, bidirectional attention can propagate one renaming
+decision across many sites in a single pass, and the advantage scales with the
+number of sites. When the same model is given concrete-but-wrong neighbours
+(target-only), the EM advantage all but disappears, falling to 2.8--4.7\%. When
+the neighbours are absent rather than misleading (all-masked), target-EM stays
+low but still above the target-only result while below RQ1. Concrete-but-wrong
+neighbours are therefore more costly than absent ones: 72.1\% of wrong
+predictions under target-only adopt the lexical form of the obfuscated
+neighbours, so the obfuscated context anchors the prediction to its own shape
+rather than letting the model use the structural cues that survive obfuscation.
+
+Figure~8(b) shows how the all-masked target-EM varies with the number of
+distinct identifiers in $S$. EM falls off as the identifier count grows---from
+the high-teens to low-20s for samples with at most a few dozen identifiers down
+to about 2\% for files with 100 or more---which contrasts with the RQ1 result
+(Figure~5), where the same dLLMs held an EM band of 26.8\%--36.4\% across
+single-identifier multi-site samples regardless of site count. The advantage is
+robust to growth in the number of co-referring sites of one identifier, but
+degrades as the number of distinct identifier groups grows.
+
+Therefore RQ2 supports RQ1 rather than contradicting it. The joint multi-site
+advantage holds when the surrounding identifier names are semantically
+informative and when $S$ resolves into a small number of co-reference groups,
+and weakens when either condition fails.
+
+
+% ---------- Fig 8 caption (unchanged; redraw from fig8_rq2_em_june.pdf) -------
+% \caption{RQ2 results. (a) Target-position Exact Match for DiffuCoder-7B and
+%   DreamCoder-7B under RQ1 (clean context), the all-masked experiment, and the
+%   target-only experiment. (b) Mean per-sample Exact Match across
+%   identifier-count buckets in the all-masked experiment.}

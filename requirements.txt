@@ -1,0 +1,17 @@
+# Python dependencies for the CoReFusion code.
+#   pip install -r requirements.txt
+#
+# PyTorch is intentionally NOT pinned here: install a build matching your CUDA
+# version from https://pytorch.org/get-started/locally/ .
+transformers==4.57.1
+accelerate
+huggingface_hub
+tqdm
+einops
+sentencepiece
+protobuf
+omegaconf
+pandas
+numpy
+matplotlib
+scikit-learn

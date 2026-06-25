@@ -1,0 +1,78 @@
+% =============================================================================
+% Table for Section III.C describing the RefineID benchmark.
+% Numbers computed by analysis/refineid_dataset_stats.py over data/test.csv.
+%
+% Requires: \usepackage{booktabs}
+%
+% Items marked  \refineidTBD{...}  are NOT recoverable from the released
+% test.csv alone (it stores only [id, masked_code, ground_truth]).  Please
+% replace them with values from the mining records (commit list, time
+% window, mining-tool description, clean-vs-mixed-commit accounting).
+% =============================================================================
+
+\newcommand{\refineidTBD}[1]{\textcolor{red}{\textbf{TBD: #1}}}
+
+\begin{table}[t]
+  \centering
+  \caption{Composition of the \textsc{RefineID} benchmark used in Section~III.C
+           (Java identifier-renaming localisation).  Percentages are over
+           $N=1000$ renaming samples unless noted.  Identifier-kind rows are
+           derived by a regex-based classifier over the declaration context
+           of each \texttt{[MASK]} (no AST parsing); methods and fields are
+           therefore lower bounds.}
+  \label{tab:refineid}
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabular}{@{}lr@{}}
+    \toprule
+    \multicolumn{2}{@{}l}{\textbf{Source and mining}} \\
+    \midrule
+    Programming language                          & Java \\
+    Source repositories                           & open-source GitHub Java projects \\
+    Mining method                                 & \refineidTBD{tool/diff method, e.g.\ RefactoringMiner~v\dots, JLink} \\
+    Commit-window                                 & \refineidTBD{YYYY--YYYY} \\
+    Distinct commits mined                        & \refineidTBD{$n$ commits} \\
+    Clean rename-only vs.\ mixed commits          & \refineidTBD{$x\%$ clean / $y\%$ mixed} \\
+    \midrule
+    \multicolumn{2}{@{}l}{\textbf{Scale}} \\
+    \midrule
+    Renaming samples (one identifier per sample)  & 1{,}000 \\
+    Total masked occurrences (usage sites)        & 7{,}712 \\
+    Distinct ground-truth identifier strings      & 847 \\
+    Distinct top-3 Java package prefixes          & 118 \\
+    \quad covering, e.g., Elasticsearch (361), Google/Android (192), & \\
+    \quad Spring (98), Apache (52), libGDX (52), Mockito (15), \dots & \\
+    \midrule
+    \multicolumn{2}{@{}l}{\textbf{Usage sites per renaming}} \\
+    \midrule
+    Min / median / mean / max                     & 1 / 4 / 7.71 / 175 \\
+    Renamings with 1 usage site                   & \phantom{0}23 (2.3\%) \\
+    Renamings with 2--4 usage sites               & 485 (48.5\%) \\
+    Renamings with 5--10 usage sites              & 288 (28.8\%) \\
+    Renamings with $>$10 usage sites              & 204 (20.4\%) \\
+    \midrule
+    \multicolumn{2}{@{}l}{\textbf{Source-file size (characters)}} \\
+    \midrule
+    Median / P95 / max                            & 10{,}500 / 77{,}737 / 290{,}535 \\
+    \midrule
+    \multicolumn{2}{@{}l}{\textbf{Target-identifier complexity}} \\
+    \midrule
+    Identifier length (chars): median / mean / max & 9 / 10.4 / 40 \\
+    Single-segment names (e.g.\ \texttt{context})  & 395 (39.5\%) \\
+    Two-segment camelCase                          & 425 (42.5\%) \\
+    Three-segment camelCase                        & 128 (12.8\%) \\
+    Four-or-more-segment camelCase                 & \phantom{0}52 (5.2\%) \\
+    \midrule
+    \multicolumn{2}{@{}l}{\textbf{Renamed-identifier kind (declaration-site heuristic)}} \\
+    \midrule
+    Local variable                                 & 483 (48.3\%) \\
+    Formal parameter                               & 376 (37.6\%) \\
+    Private field                                  & \phantom{00}30 (3.0\%) \\
+    Package-private field                          & \phantom{000}3 (0.3\%) \\
+    Public / protected field                       & \phantom{000}5 (0.5\%) \\
+    Method                                         & \phantom{00}12 (1.2\%) \\
+    Usage-only (declaration not in the file slice) & \phantom{00}91 (9.1\%) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
